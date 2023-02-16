@@ -655,3 +655,19 @@ procdump(void)
     printf("\n");
   }
 }
+
+uint64
+procnproc(void)
+{
+  uint64 nproc = 0;
+  struct proc *p;
+
+  acquire(&wait_lock);
+  for(p = proc; p < &proc[NPROC]; p++) {
+    if (p && p->state != UNUSED) {
+      nproc += 1;
+    }
+  }
+  release(&wait_lock);
+  return nproc;
+}
