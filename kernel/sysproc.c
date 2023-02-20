@@ -46,7 +46,7 @@ sys_sbrk(void)
 
   if(argint(0, &n) < 0)
     return -1;
-  
+
   addr = myproc()->sz;
   if(growproc(n) < 0)
     return -1;
@@ -81,6 +81,35 @@ int
 sys_pgaccess(void)
 {
   // lab pgtbl: your code here.
+  uint64 va;
+  int pagen;
+  uint64 mask64;
+  if (argaddr(0, &va) < 0)
+    return -1;
+  if (argint(1, &pagen) < 0)
+    return -1;
+  if (argaddr(2, &mask64) < 0)
+    return -1;
+  if (pagen > 32)
+    return -1;
+
+  unsigned int mask = 0;
+  struct proc *p = myproc();
+  pagetable_t userpgt = p->pagetable;
+  uint64 iter_va;
+  pte_t* pte;
+
+  for (int i = 0; i < pagen; i++) {
+    iter_va = va + i * PGSIZE;
+    pte = walk(userpgt, iter_va, 0);
+    if (*pte & PTE_A) {
+      mask |= 1 << i;
+      *pte = *pte ^ PTE_A;
+    }
+  }
+
+  copyout(userpgt, mask64, (char*)&mask, 4);
+
   return 0;
 }
 #endif
