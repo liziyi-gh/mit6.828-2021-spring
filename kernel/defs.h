@@ -127,6 +127,7 @@ void            initsleeplock(struct sleeplock*, char*);
 int             memcmp(const void*, const void*, uint);
 void*           memmove(void*, const void*, uint);
 void*           memset(void*, int, uint);
+void*           memcpy(void *dst, const void *src, uint n);
 char*           safestrcpy(char*, const char*, int);
 int             strlen(const char*);
 int             strncmp(const char*, const char*, uint);
