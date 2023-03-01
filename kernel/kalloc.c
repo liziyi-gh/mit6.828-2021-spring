@@ -23,10 +23,19 @@ struct {
   struct run *freelist;
 } kmem;
 
+#define PAGE_MAX ((PHYSTOP-KERNBASE)/PGSIZE)
+#define PAGE_INDEX(x) ((((uint64)(x)) >> PGSHIFT) % (PAGE_MAX))
+
+
+uint32 page_reference[PAGE_MAX];
+
 void
 kinit()
 {
   initlock(&kmem.lock, "kmem");
+  int i = 0;
+  for (; i < PAGE_MAX; i++)
+    page_reference[i] = 1;
   freerange(end, (void*)PHYSTOP);
 }
 
@@ -51,14 +60,16 @@ kfree(void *pa)
   if(((uint64)pa % PGSIZE) != 0 || (char*)pa < end || (uint64)pa >= PHYSTOP)
     panic("kfree");
 
-  // Fill with junk to catch dangling refs.
-  memset(pa, 1, PGSIZE);
-
-  r = (struct run*)pa;
-
   acquire(&kmem.lock);
-  r->next = kmem.freelist;
-  kmem.freelist = r;
+  r = (struct run*)pa;
+  kreduceref(r);
+
+  if (page_reference[PAGE_INDEX(r)] == 0){
+    // Fill with junk to catch dangling refs.
+    memset(pa, 1, PGSIZE);
+    r->next = kmem.freelist;
+    kmem.freelist = r;
+  }
   release(&kmem.lock);
 }
 
@@ -72,11 +83,25 @@ kalloc(void)
 
   acquire(&kmem.lock);
   r = kmem.freelist;
-  if(r)
+  if(r) {
     kmem.freelist = r->next;
+    kaddref(r);
+  }
   release(&kmem.lock);
 
   if(r)
     memset((char*)r, 5, PGSIZE); // fill with junk
   return (void*)r;
+}
+
+void
+kaddref(void *pa)
+{
+  page_reference[PAGE_INDEX(pa)] += 1;
+}
+
+void
+kreduceref(void *pa)
+{
+  page_reference[PAGE_INDEX(pa)] -= 1;
 }
