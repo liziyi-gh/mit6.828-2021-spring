@@ -1,1 +1,7 @@
-ans
+ans:
+There is data race. Anything could happen.
+Nothing is promised in this situation.
+In this case, most probably there are 2 or more threads writing same entry,
+and only one of the writes could take affects in my x86 PC.
+Because of the total store order memory model?
+
