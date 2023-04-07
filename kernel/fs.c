@@ -24,7 +24,7 @@
 #define min(a, b) ((a) < (b) ? (a) : (b))
 // there should be one superblock per disk device, but we run with
 // only one device
-struct superblock sb; 
+struct superblock sb;
 
 // Read the super block.
 static void
@@ -180,7 +180,7 @@ void
 iinit()
 {
   int i = 0;
-  
+
   initlock(&itable.lock, "itable");
   for(i = 0; i < NINODE; i++) {
     initsleeplock(&itable.inode[i].lock, "inode");
@@ -400,6 +400,41 @@ bmap(struct inode *ip, uint bn)
     brelse(bp);
     return addr;
   }
+  bn -= NINDIRECT;
+
+  if (bn < NDOUBLEINDIRECT) {
+    uint aidx = (bn / NINDIRECT);
+    uint bidx = bn % NINDIRECT;;
+    uint *b;
+    struct buf *dbp;
+
+    addr = ip->addrs[NDIRECT+1];
+    if (addr == 0) {
+      ip->addrs[NDIRECT+1] = balloc(ip->dev);
+      addr = ip->addrs[NDIRECT+1];
+    }
+    bp = bread(ip->dev, addr);
+    a = (uint*)bp->data;
+    addr = a[aidx];
+    if (addr == 0) {
+      a[aidx] = balloc(ip->dev);
+      addr = a[aidx];
+      log_write(bp);
+    }
+
+    dbp = bread(ip->dev, addr);
+    b = (uint*) dbp->data;
+    addr = b[bidx];
+    if (addr == 0) {
+      b[bidx] = balloc(ip->dev);
+      addr = b[bidx];
+      log_write(dbp);
+    }
+    brelse(dbp);
+    brelse(bp);
+
+    return addr;
+  }
 
   panic("bmap: out of range");
 }
@@ -430,6 +465,32 @@ itrunc(struct inode *ip)
     brelse(bp);
     bfree(ip->dev, ip->addrs[NDIRECT]);
     ip->addrs[NDIRECT] = 0;
+  }
+
+  if (ip->addrs[NDIRECT+1]) {
+    bp = bread(ip->dev, ip->addrs[NDIRECT+1]);
+    a = (uint*)bp->data;
+    for(j = 0; j < NINDIRECT; j++){
+      if(a[j]) {
+        uint *b;
+        int k;
+        struct buf *nbp;
+        nbp = bread(ip->dev, a[j]);
+        b = (uint*)nbp->data;
+        for (k = 0; k < NINDIRECT; k++) {
+          if (b[k]) {
+            printf("df\n");
+            bfree(ip->dev, b[k]);
+          }
+        }
+
+        brelse(nbp);
+        bfree(ip->dev, a[j]);
+      }
+    }
+    bfree(ip->dev, ip->addrs[NDIRECT+1]);
+    brelse(bp);
+    ip->addrs[NDIRECT+1] = 0;
   }
 
   ip->size = 0;
