@@ -283,17 +283,16 @@ create(char *path, short type, short major, short minor)
   return ip;
 }
 
-uint64
-sys_open(void)
+static uint64 open_helper(char* path, int omode, int depth)
 {
-  char path[MAXPATH];
-  int fd, omode;
-  struct file *f;
+  struct file *f = 0;
   struct inode *ip;
-  int n;
+  int fd = 0;
 
-  if((n = argstr(0, path, MAXPATH)) < 0 || argint(1, &omode) < 0)
+  if (depth > 10) {
+    printf("link too depth\n");
     return -1;
+  }
 
   begin_op();
 
@@ -345,10 +344,32 @@ sys_open(void)
     itrunc(ip);
   }
 
+  if (ip->type == T_SYMLINK && (omode ^ O_NOFOLLOW)) {
+    if (readi(ip, 0, (uint64)path, 0, MAXPATH) < 0 ) {
+      panic("read link failed");
+    }
+    iunlockput(ip);
+    end_op();
+    fd = open_helper(path, omode, depth+1);
+    return fd;
+  }
+
   iunlock(ip);
   end_op();
 
   return fd;
+}
+
+uint64
+sys_open(void)
+{
+  char path[MAXPATH];
+  int n, omode;
+
+  if((n = argstr(0, path, MAXPATH)) < 0 || argint(1, &omode) < 0)
+    return -1;
+
+  return open_helper(path, omode, 0);
 }
 
 uint64
@@ -393,7 +414,7 @@ sys_chdir(void)
   char path[MAXPATH];
   struct inode *ip;
   struct proc *p = myproc();
-  
+
   begin_op();
   if(argstr(0, path, MAXPATH) < 0 || (ip = namei(path)) == 0){
     end_op();
@@ -482,5 +503,38 @@ sys_pipe(void)
     fileclose(wf);
     return -1;
   }
+  return 0;
+}
+
+uint64
+sys_symlink(void)
+{
+  char target[MAXPATH];
+  char path[MAXPATH];
+  uint64 user_p_target;
+  int n;
+  struct inode *ip;
+
+  if((n = argstr(0, target, MAXPATH)) < 0 || (n = argstr(1, path, MAXPATH)) < 0)
+    return -1;
+
+  if (argaddr(0, &user_p_target) < 0)
+    return -1;
+
+  begin_op();
+  ip = create(path, T_SYMLINK, 0, 0);
+  if (ip == 0) {
+    end_op();
+    return -1;
+  }
+  if (writei(ip, 0, (uint64)target, 0, MAXPATH) < 0){
+    printf("symlink write failed\n");
+    iunlock(ip);
+    end_op();
+    return -1;
+  }
+  iunlock(ip);
+  end_op();
+
   return 0;
 }
