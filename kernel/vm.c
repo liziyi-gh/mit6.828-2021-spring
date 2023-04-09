@@ -45,7 +45,7 @@ kvmmake(void)
 
   // map kernel stacks
   proc_mapstacks(kpgtbl);
-  
+
   return kpgtbl;
 }
 
@@ -142,7 +142,7 @@ mappages(pagetable_t pagetable, uint64 va, uint64 size, uint64 pa, int perm)
 
   if(size == 0)
     panic("mappages: size");
-  
+
   a = PGROUNDDOWN(va);
   last = PGROUNDDOWN(va + size - 1);
   for(;;){
@@ -333,7 +333,7 @@ void
 uvmclear(pagetable_t pagetable, uint64 va)
 {
   pte_t *pte;
-  
+
   pte = walk(pagetable, va, 0);
   if(pte == 0)
     panic("uvmclear");
@@ -431,4 +431,27 @@ copyinstr(pagetable_t pagetable, char *dst, uint64 srcva, uint64 max)
   } else {
     return -1;
   }
+}
+
+uint64 find_cons_free_mem(pagetable_t ptbl, uint64 from, int length)
+{
+  uint64 iaddr, jaddr;
+  int used;
+  for (iaddr = from; iaddr < MAXVA; iaddr += PGSIZE) {
+    if (walkaddr(ptbl, iaddr) != 0) {
+      continue;
+    }
+    used = 0;
+    for (jaddr = iaddr; jaddr < iaddr + length; jaddr += PGSIZE) {
+      if (walkaddr(ptbl, jaddr) != 0) {
+        iaddr = jaddr;
+        used = 1;
+        break;
+      }
+    }
+    if (used == 0) {
+      return iaddr;
+    }
+  }
+  return 0;
 }

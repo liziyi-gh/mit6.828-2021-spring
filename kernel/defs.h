@@ -170,6 +170,8 @@ uint64          walkaddr(pagetable_t, uint64);
 int             copyout(pagetable_t, uint64, char *, uint64);
 int             copyin(pagetable_t, char *, uint64, uint64);
 int             copyinstr(pagetable_t, char *, uint64, uint64);
+uint64          find_cons_free_mem(pagetable_t, uint64, int);
+pte_t *         walk(pagetable_t pagetable, uint64 va, int alloc);
 
 // plic.c
 void            plicinit(void);
@@ -184,3 +186,10 @@ void            virtio_disk_intr(void);
 
 // number of elements in fixed-size array
 #define NELEM(x) (sizeof(x)/sizeof((x)[0]))
+
+// sysfile.c
+int argfd(int n, int *pfd, struct file **pf);
+
+// sysproc.c
+int handlemmap(pagetable_t ptbl, uint64 va);
+uint64 do_munmap(uint64 va, int length);

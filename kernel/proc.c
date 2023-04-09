@@ -5,6 +5,10 @@
 #include "spinlock.h"
 #include "proc.h"
 #include "defs.h"
+#include "sleeplock.h"
+#include "fs.h"
+#include "file.h"
+#include "fcntl.h"
 
 struct cpu cpus[NCPU];
 
@@ -32,7 +36,7 @@ struct spinlock wait_lock;
 void
 proc_mapstacks(pagetable_t kpgtbl) {
   struct proc *p;
-  
+
   for(p = proc; p < &proc[NPROC]; p++) {
     char *pa = kalloc();
     if(pa == 0)
@@ -47,7 +51,7 @@ void
 procinit(void)
 {
   struct proc *p;
-  
+
   initlock(&pid_lock, "nextpid");
   initlock(&wait_lock, "wait_lock");
   for(p = proc; p < &proc[NPROC]; p++) {
@@ -88,7 +92,7 @@ myproc(void) {
 int
 allocpid() {
   int pid;
-  
+
   acquire(&pid_lock);
   pid = nextpid;
   nextpid = nextpid + 1;
@@ -229,7 +233,7 @@ userinit(void)
 
   p = allocproc();
   initproc = p;
-  
+
   // allocate one user page and copy init's instructions
   // and data into it.
   uvminit(p->pagetable, initcode, sizeof(initcode));
@@ -304,6 +308,20 @@ fork(void)
   safestrcpy(np->name, p->name, sizeof(p->name));
 
   pid = np->pid;
+  for (i = 0; i < MAXVMA; ++i) {
+    memmove(&np->vmarea[i], &p->vmarea[i], sizeof(struct vmarea));
+    if (p->vmarea[i].valid) {
+      filedup(p->vmarea[i].file);
+      int j;
+      for (j = 0; j < p->vmarea[i].length; j += PGSIZE) {
+        if (mappages(np->pagetable, p->vmarea[i].start_addr+j, PGSIZE,
+                     (uint64)KERNBASE, PTE_MMAP | PTE_U) < 0) {
+          panic("map failed\n");
+          // TODO: unmap previous pages
+        }
+      }
+    }
+  }
 
   release(&np->lock);
 
@@ -344,6 +362,16 @@ exit(int status)
   if(p == initproc)
     panic("init exiting");
 
+  int i;
+  struct vmarea *vma;
+  for (i = 0; i < MAXVMA; ++i) {
+    if (!p->vmarea[i].valid) {
+      continue;
+    }
+    vma = &p->vmarea[i];
+    do_munmap(vma->start_addr, vma->length);
+  }
+
   // Close all open files.
   for(int fd = 0; fd < NOFILE; fd++){
     if(p->ofile[fd]){
@@ -365,7 +393,7 @@ exit(int status)
 
   // Parent might be sleeping in wait().
   wakeup(p->parent);
-  
+
   acquire(&p->lock);
 
   p->xstate = status;
@@ -421,7 +449,7 @@ wait(uint64 addr)
       release(&wait_lock);
       return -1;
     }
-    
+
     // Wait for a child to exit.
     sleep(p, &wait_lock);  //DOC: wait-sleep
   }
@@ -439,7 +467,7 @@ scheduler(void)
 {
   struct proc *p;
   struct cpu *c = mycpu();
-  
+
   c->proc = 0;
   for(;;){
     // Avoid deadlock by ensuring that devices can interrupt.
@@ -529,7 +557,7 @@ void
 sleep(void *chan, struct spinlock *lk)
 {
   struct proc *p = myproc();
-  
+
   // Must acquire p->lock in order to
   // change p->state and then call sched.
   // Once we hold p->lock, we can be
